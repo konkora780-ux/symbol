@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ドロップス検索</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --line:#e2e6ea; --text:#26313a;
+    --muted:#6b7885; --accent:#2f8f6b; --accent-soft:#e3f3ec; --shadow:0 1px 3px rgba(0,0,0,.08);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;}
+  body{
+    font-family:-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    background:var(--bg); color:var(--text);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  header{
+    position:sticky; top:0; z-index:10; background:var(--bg);
+    padding:10px 12px 6px; border-bottom:1px solid var(--line);
+    padding-top:calc(10px + env(safe-area-inset-top));
+  }
+  .titlebar{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+  .titlebar h1{font-size:18px;margin:0;font-weight:700;}
+  .titlebar .count{font-size:13px;color:var(--muted);}
+  .searchbox{position:relative;}
+  #q{
+    width:100%; font-size:17px; padding:12px 40px 12px 14px; border:1.5px solid var(--line);
+    border-radius:12px; background:var(--card); outline:none;
+  }
+  #q:focus{border-color:var(--accent);}
+  #clear{
+    position:absolute; right:8px; top:50%; transform:translateY(-50%);
+    border:none; background:#cdd4da; color:#fff; width:26px; height:26px; border-radius:50%;
+    font-size:16px; line-height:1; cursor:pointer; display:none;
+  }
+  .cats{display:flex; gap:7px; overflow-x:auto; padding:9px 0 3px; -webkit-overflow-scrolling:touch;}
+  .cats button{
+    flex:0 0 auto; border:1.5px solid var(--line); background:var(--card); color:var(--text);
+    padding:7px 13px; border-radius:20px; font-size:14px; cursor:pointer; white-space:nowrap;
+  }
+  .cats button.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+  main{padding:12px;}
+  .grid{
+    display:grid; gap:10px;
+    grid-template-columns:repeat(auto-fill,minmax(104px,1fr));
+  }
+  .tile{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:6px 6px 4px; cursor:pointer; box-shadow:var(--shadow);
+    display:flex; flex-direction:column; align-items:center; transition:transform .06s;
+  }
+  .tile:active{transform:scale(.94);}
+  .tile.copied{border-color:var(--accent); background:var(--accent-soft);}
+  .tile img{width:100%; aspect-ratio:1/1; object-fit:contain; background:#fff; border-radius:8px;}
+  .tile .w{
+    font-size:12.5px; margin-top:4px; text-align:center; line-height:1.2;
+    max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .empty{text-align:center;color:var(--muted);padding:40px 10px;}
+  #toast{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px);
+    background:#26313a; color:#fff; padding:11px 18px; border-radius:22px; font-size:15px;
+    opacity:0; pointer-events:none; transition:opacity .2s,transform .2s; z-index:50;
+    max-width:90%; text-align:center;
+  }
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  /* 拡大表示（モーダル） */
+  #overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:40;
+    display:none; align-items:center; justify-content:center; padding:16px;
+  }
+  #overlay.show{display:flex;}
+  .modal{
+    background:var(--card); border-radius:18px; padding:16px; width:min(360px,92vw);
+    box-shadow:0 12px 40px rgba(0,0,0,.25); text-align:center;
+  }
+  .modal img{width:200px; height:200px; max-width:70vw; max-height:70vw; object-fit:contain; background:#fff; border-radius:12px;}
+  .modal .mw{font-size:22px; font-weight:700; margin:10px 0 2px;}
+  .modal .mr{font-size:14px; color:var(--muted); margin-bottom:14px; min-height:1em;}
+  .modal .btns{display:flex; gap:8px; flex-wrap:wrap; justify-content:center;}
+  .modal button{
+    flex:1 1 auto; min-width:120px; font-size:15px; padding:12px 10px; border-radius:12px; border:none; cursor:pointer;
+  }
+  .btn-img{background:var(--accent); color:#fff;}
+  .btn-word{background:var(--accent-soft); color:var(--accent);}
+  .btn-close{background:#eef1f4; color:var(--muted); flex-basis:100%;}
+</style>
+</head>
+<body>
+<header>
+  <div class="titlebar">
+    <h1>ドロップス検索</h1>
+    <span class="count" id="count">読み込み中…</span>
+  </div>
+  <div class="searchbox">
+    <input id="q" type="search" inputmode="search" placeholder="ことばで検索（例：電車、ゾウ）" autocomplete="off">
+    <button id="clear" aria-label="消す">×</button>
+  </div>
+  <div class="cats" id="cats"></div>
+</header>
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">見つかりませんでした</div>
+</main>
+<div id="overlay">
+  <div class="modal">
+    <img id="m-img" alt="">
+    <div class="mw" id="m-word"></div>
+    <div class="mr" id="m-reading"></div>
+    <div class="btns">
+      <button class="btn-img" id="m-copyimg">画像をコピー</button>
+      <button class="btn-word" id="m-copyword">ことばをコピー</button>
+      <button class="btn-close" id="m-close">とじる</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const SUPABASE_URL = "https://hortngwcijhjagwmcoxo.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_qy1V664U_HDLq_YEXkwo7w_fF6GpRBI";
+
+const CATS = ["すべて","人・動植物","動き・様子","飲食物","家の中（身の回り）","家の外","文化・社会"];
+let ALL = [];
+let curCat = "すべて";
+
+const $ = s => document.querySelector(s);
+const grid = $("#grid"), countEl = $("#count"), emptyEl = $("#empty");
+
+// カテゴリタブ
+const catsBox = $("#cats");
+CATS.forEach((c,i)=>{
+  const b=document.createElement("button");
+  b.textContent = c==="家の中（身の回り）" ? "家の中" : c;
+  if(i===0) b.classList.add("on");
+  b.onclick=()=>{ curCat=c; [...catsBox.children].forEach(x=>x.classList.remove("on")); b.classList.add("on"); render(); };
+  catsBox.appendChild(b);
+});
+
+// データ取得（Publishableキーで読み取り）
+async function load(){
+  try{
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/symbols?select=code,word,category,reading,synonyms,url&order=code`,
+      { headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}` } }
+    );
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    ALL = await res.json();
+    render();
+  }catch(e){
+    countEl.textContent = "読み込みに失敗しました";
+    emptyEl.style.display="block";
+    emptyEl.textContent = "データを読み込めませんでした（通信をご確認ください）";
+  }
+}
+
+function match(item, q){
+  if(!q) return true;
+  const hay = [item.word, item.reading, item.synonyms].filter(Boolean).join(" ").toLowerCase();
+  return hay.includes(q);
+}
+
+function render(){
+  const q = $("#q").value.trim().toLowerCase();
+  $("#clear").style.display = q ? "block" : "none";
+  const list = ALL.filter(it => (curCat==="すべて"||it.category===curCat) && match(it,q));
+  countEl.textContent = `${list.length} 件`;
+
+  grid.innerHTML = "";
+  emptyEl.style.display = list.length ? "none" : "block";
+  const frag = document.createDocumentFragment();
+  for(const it of list){
+    const t=document.createElement("div"); t.className="tile";
+    const img=document.createElement("img");
+    img.loading="lazy"; img.src=it.url; img.alt=it.word;
+    const w=document.createElement("div"); w.className="w"; w.textContent=it.word; w.title=it.word;
+    t.appendChild(img); t.appendChild(w);
+    t.onclick=()=>openModal(it);
+    frag.appendChild(t);
+  }
+  grid.appendChild(frag);
+}
+
+// タップで拡大表示（モーダル）を開く
+let current=null;
+const overlay=$("#overlay");
+function openModal(it){
+  current=it;
+  $("#m-img").src=it.url; $("#m-img").alt=it.word;
+  $("#m-word").textContent=it.word;
+  $("#m-reading").textContent=it.reading||"";
+  overlay.classList.add("show");
+}
+function closeModal(){ overlay.classList.remove("show"); current=null; }
+overlay.addEventListener("click",e=>{ if(e.target===overlay) closeModal(); });
+$("#m-close").onclick=closeModal;
+
+// 画像をクリップボードにコピー
+$("#m-copyimg").onclick=async ()=>{
+  if(!current) return;
+  const it=current;
+  try{
+    // Safari対策：ClipboardItemにPromiseを渡してユーザー操作内で完結させる
+    const item=new ClipboardItem({ "image/png": fetch(it.url).then(r=>{ if(!r.ok) throw new Error(); return r.blob(); }) });
+    await navigator.clipboard.write([item]);
+    toast(`「${it.word}」の画像をコピーしました`); closeModal();
+  }catch(e){
+    try{ await navigator.clipboard.writeText(it.url); toast("画像をコピーできないため、URLをコピーしました"); closeModal(); }
+    catch(_){ toast("コピーできませんでした"); }
+  }
+};
+// ことば（文字）をコピー
+$("#m-copyword").onclick=async ()=>{
+  if(!current) return;
+  try{ await navigator.clipboard.writeText(current.word); toast(`「${current.word}」をコピーしました`); closeModal(); }
+  catch(_){ toast("コピーできませんでした"); }
+};
+
+let toastTimer;
+function toast(msg){
+  const el=$("#toast"); el.textContent=msg; el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove("show"),1600);
+}
+
+// 検索入力
+let deb;
+$("#q").addEventListener("input",()=>{ clearTimeout(deb); deb=setTimeout(render,120); });
+$("#clear").onclick=()=>{ $("#q").value=""; render(); $("#q").focus(); };
+
+load();
+</script>
+</body>
+</html>
