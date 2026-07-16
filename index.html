@@ -141,14 +141,24 @@ CATS.forEach((c,i)=>{
 });
 
 // データ取得（Publishableキーで読み取り）
+// ※SupabaseのAPIは1回最大1000件なので、分割して全件取得する
 async function load(){
   try{
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/symbols?select=code,word,category,reading,synonyms,url&order=code`,
-      { headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}` } }
-    );
-    if(!res.ok) throw new Error("HTTP "+res.status);
-    ALL = await res.json();
+    const headers = { apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}` };
+    const page = 1000;
+    let off = 0;
+    ALL = [];
+    while(true){
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/symbols?select=code,word,category,reading,synonyms,url&order=code&limit=${page}&offset=${off}`,
+        { headers }
+      );
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      const chunk = await res.json();
+      ALL = ALL.concat(chunk);
+      if(chunk.length < page) break;
+      off += page;
+    }
     render();
   }catch(e){
     countEl.textContent = "読み込みに失敗しました";
