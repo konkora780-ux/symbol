@@ -125,9 +125,6 @@
 <div id="toast"></div>
 
 <script>
-const SUPABASE_URL = "https://hortngwcijhjagwmcoxo.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_qy1V664U_HDLq_YEXkwo7w_fF6GpRBI";
-
 const CATS = ["すべて","人・動植物","動き・様子","飲食物","家の中（身の回り）","家の外","文化・社会"];
 let ALL = [];
 let curCat = "すべて";
@@ -145,25 +142,15 @@ CATS.forEach((c,i)=>{
   catsBox.appendChild(b);
 });
 
-// データ取得（Publishableキーで読み取り）
-// ※SupabaseのAPIは1回最大1000件なので、分割して全件取得する
+// データ取得（同じリポジトリの symbols.json と symbols/<code>.png を読む）
+// symbols.json の1行 = [code, word, category, reading, synonyms]
 async function load(){
   try{
-    const headers = { apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}` };
-    const page = 1000;
-    let off = 0;
-    ALL = [];
-    while(true){
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/symbols?select=code,word,category,reading,synonyms,url&order=code&limit=${page}&offset=${off}`,
-        { headers }
-      );
-      if(!res.ok) throw new Error("HTTP "+res.status);
-      const chunk = await res.json();
-      ALL = ALL.concat(chunk);
-      if(chunk.length < page) break;
-      off += page;
-    }
+    const res = await fetch("symbols.json");
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const rows = await res.json();
+    ALL = rows.map(([code,word,category,reading,synonyms]) =>
+      ({ code, word, category, reading, synonyms, url:`symbols/${code}.png` }));
     render();
   }catch(e){
     countEl.textContent = "読み込みに失敗しました";
